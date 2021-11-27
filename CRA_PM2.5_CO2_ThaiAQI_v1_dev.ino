@@ -23,14 +23,18 @@
 #define TFT_SILVER      0xC618      /* 192, 192, 192 */
 #define TFT_SKYBLUE     0x867D      /* 135, 206, 235 */
 #define TFT_VIOLET      0x915C      /* 180,  46, 226 */
+
+#define WDTPin    4
+#define swTFTPin 32
+unsigned long ms;
 //
-//#include "BluetoothSerial.h"
-//
-//#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
-//#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
-//#endif
-//
-//BluetoothSerial SerialBT;
+#include "BluetoothSerial.h"
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
+BluetoothSerial SerialBT;
 
 #include "HardwareSerial_NB_BC95.h"
 #include <Adafruit_MLX90614.h>
@@ -85,7 +89,8 @@ EEPROMClass  eCO2BASELINE("eeprom2", 0x100);
 
 Scheduler runner;
 
-
+String pro = "";
+  
 #define CF_OL24 &Orbitron_Light_24
 #define CF_OL32 &Orbitron_Light_32
 
@@ -215,7 +220,18 @@ char  char_to_byte(char c)
     return (c - 55);
   }
 }
+void drawUpdate(int num, int x, int y)
+{
+  stringUpdate.createSprite(50, 20);
+  stringUpdate.fillScreen(TFT_BLACK);
+  stringUpdate.setFreeFont(FSB9);
+  stringUpdate.setTextColor(TFT_ORANGE);
+  stringUpdate.setTextSize(1);
+  stringUpdate.drawNumber(num, 0, 3);
+  stringUpdate.drawString("%", 25, 3, GFXFF);
+  stringUpdate.pushSprite(x, y);
 
+}
 void setupOTA()
 {
   //Port defaults to 8266
@@ -248,7 +264,7 @@ void setupOTA()
 
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
   {
-    String pro = String(progress / (total / 100)) + "%";
+    pro = String(progress / (total / 100)) + "%";
     int progressbar = (progress / (total / 100));
     //int progressbar = (progress / 5) % 100;
     //int pro = progress / (total / 100);
@@ -257,7 +273,8 @@ void setupOTA()
     //    tft.drawString(title6, 190, 20, GFXFF); // Print the test text in the custom font
 
 
-    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    Serial.printf(".");
+    SerialBT.printf(".");
   });
 
   ArduinoOTA.onError([](ota_error_t error)
@@ -292,8 +309,10 @@ void setupOTA()
         break;
     }
 
-
+    
     Serial.println(info);
+    SerialBT.println(info);
+    SerialBT.println(pro);
     ESP.restart();
   });
 
@@ -531,7 +550,7 @@ void _initBME280()
 }
 
 void errorTimeDisplay(int i) {
-  tft.fillScreen(TFT_WHITE);
+  tft.fillScreen(TFT_DARKCYAN);
   int xpos = tft.width() / 2; // Half the screen width
   int ypos = tft.height() / 2;
   tft.drawString("Connect NB failed " + String(i + 1) + " times", xpos, ypos, GFXFF);
@@ -550,16 +569,18 @@ void _initSGP30 () {
 }
 void setup() {
   Serial.begin(115200);
-  //  SerialBT.begin(HOSTNAME); //Bluetooth device name
-  //SerialBT.println(HOSTNAME);
+  SerialBT.begin(HOSTNAME); //Bluetooth device name
+  SerialBT.println(HOSTNAME);
   EEPROM.begin(512);
-  pinMode(32, OUTPUT);
-  digitalWrite(32, LOW);    // turn the LED off by making the voltage LOW
+  pinMode(swTFTPin, OUTPUT);
+  digitalWrite(swTFTPin, LOW);    // turn the LED off by making the voltage LOW
   _initLCD();
 
+  
 
-  pinMode(4, OUTPUT);
-  digitalWrite(4, HIGH);
+
+//  pinMode(4, OUTPUT);
+//  digitalWrite(4, HIGH);
   //delay(500);
 
   deviceToken = AISnb.getNCCID();
@@ -572,7 +593,7 @@ void setup() {
     meta = AISnb.getSignal();
     Serial.print("meta.rssi:"); Serial.println(meta.rssi);
     if (!meta.rssi.equals("N/A")) {
-      if (meta.rssi.toInt() > -100) {
+      if (meta.rssi.toInt() > -110) {
         break;
       } else {
         errorTimeDisplay(nbErrorTime);
@@ -585,12 +606,12 @@ void setup() {
       delay(1000);
     }
   }
-  tft.fillScreen(TFT_WHITE);
-  tft.drawString("Wait for WiFi Setting (Timeout 60 Sec)", tft.width() / 2, tft.height() / 2, GFXFF);
-  wifiManager.setTimeout(60);
+  tft.fillScreen(TFT_DARKCYAN);
+  tft.drawString("Wait for WiFi Setting (Timeout 120 Sec)", tft.width() / 2, tft.height() / 2, GFXFF);
+  wifiManager.setTimeout(120);
 
   wifiManager.setAPCallback(configModeCallback);
-  String wifiName = "@AIRMASS2.5Ins";
+  String wifiName = "@AIRMASS2.5";
   wifiName.concat(String((uint32_t)ESP.getEfuseMac(), HEX));
   if (!wifiManager.autoConnect(wifiName.c_str())) {
     //Serial.println("failed to connect and hit timeout");
@@ -598,7 +619,8 @@ void setup() {
     //    ESP.reset();
     //delay(1000);
   }
-  setupWIFI();
+//  setupWIFI();
+  
   setupOTA();
   if (nbErrorTime == 10) {
     connectWifi = true;
@@ -658,14 +680,7 @@ void setup() {
   tft.fillRect(260, 185, tft.width() - 15, 5, TFT_BURGUNDY); // Print the test text in the custom font
 }
 
-/*void reconnectMqtt()
-  {
-  if ( client.connect("DustBoy", deviceToken.c_str(), NULL) )
-  {
-    Serial.println( F("Connect MQTT Success."));
-    client.subscribe("v1/devices/me/rpc/request/+");
-  }
-  }*/
+
 
 void splash() {
   int xpos =  0;
@@ -673,7 +688,7 @@ void splash() {
   tft.init();
   // Swap the colour byte order when rendering
   tft.setSwapBytes(true);
-  tft.setRotation(3);  // landscape
+  tft.setRotation(1);  // landscape
 
   tft.fillScreen(TFT_BLACK);
   // Draw the icons
@@ -685,6 +700,7 @@ void splash() {
   xpos = tft.width() / 2; // Half the screen width
   ypos = 150;
   tft.drawString("AIRMASS2.5 Inspector", xpos, ypos, GFXFF);  // Draw the text string in the selected GFX free font
+  tft.drawString("version2.2", xpos, ypos+20, GFXFF);  // Draw the text string in the selected GFX free font
   AISnb.debug = true;
   AISnb.setupDevice(serverPort);
   //
@@ -702,13 +718,13 @@ void splash() {
   //delay(4000);
   tft.setTextColor(TFT_WHITE);
   tft.setFreeFont(FSB9);
-  tft.drawString(nccidStr, xpos, ypos + 20, GFXFF);
-  tft.drawString(imsiStr, xpos, ypos + 40, GFXFF);
+  tft.drawString(nccidStr, xpos, ypos + 40, GFXFF);
+  tft.drawString(imsiStr, xpos, ypos + 60, GFXFF);
   delay(5000);
 
   tft.setTextFont(GLCD);
-  tft.setRotation(3);
-  tft.fillScreen(TFT_WHITE);
+  
+  tft.fillScreen(TFT_DARKCYAN);
   // Select the font
   ypos += tft.fontHeight(GFXFF);                      // Get the font height and move ypos down
   tft.setFreeFont(FSB9);
@@ -737,6 +753,7 @@ void printBME280Data()
   BME280::TempUnit tempUnit(BME280::TempUnit_Celsius);
   BME280::PresUnit presUnit(BME280::PresUnit_Pa);
   bme.read(pres, temp, hum, tempUnit, presUnit);
+  temp = temp-3;  //compensate
 
 }
 
@@ -788,6 +805,7 @@ void composeJson() {
   }
   json.concat("}");
   Serial.println(json);
+  SerialBT.println(json);
   //SerialBT.println(json);
   if (data.pm25_env > 1000)
     ESP.restart();
@@ -879,22 +897,22 @@ void t2CallShowEnv() {
     drawPM1(data.pm01_env, 6, 195);
     tft.drawString(title2, 40, 235, GFXFF); // Print the test text in the custom font
 
-    drawPM10(data.pm100_env, 60, 195);
+    drawPM10(data.pm100_env, 55, 195);
     tft.drawString(title3, 100, 235, GFXFF); // Print the test text in the custom font
 
-    drawCO2(sgp.eCO2, 120, 195);
-    tft.drawString(title4, 155, 235, GFXFF); // Print the test text in the custom font
+    drawCO2(sgp.eCO2, 115, 195);
+    tft.drawString(title4, 150, 235, GFXFF); // Print the test text in the custom font
 
-    drawVOC(sgp.TVOC, 180, 195);
-    tft.drawString(title5, 220, 235, GFXFF); // Print the test text in the custom font
+    drawVOC(sgp.TVOC, 170, 195);
+    tft.drawString(title5, 210, 235, GFXFF); // Print the test text in the custom font
 
-    tft.drawString(title8, 255, 215, GFXFF); // Print the test text in the custom font
-    drawH(hum, 260, 195);
-    tft.drawString("%", 340, 215, GFXFF);
+    tft.drawString(title8, 250, 215, GFXFF); // Print the test text in the custom font
+    drawH(hum, 255, 195);
+    tft.drawString("%", 312, 215, GFXFF);
 
-    tft.drawString(title9, 255, 235, GFXFF); // Print the test text in the custom font
-    drawT(temp, 260, 215);
-    tft.drawString("C", 340, 235, GFXFF);
+    tft.drawString(title9, 250, 235, GFXFF); // Print the test text in the custom font
+    drawT(temp, 255, 215);
+    tft.drawString("C", 312, 235, GFXFF);
 
     //Clear Stage
 
@@ -972,6 +990,8 @@ boolean readPMSdata(Stream *s) {
   //  Serial.println("readPMSdata");
   if (! s->available()) {
     Serial.println("readPMSdata.false");
+    SerialBT.println("readPMSdata.false");
+
     return false;
   }
 
@@ -1163,18 +1183,7 @@ void drawCO2(int num, int x, int y)
   //  stringCO2.deleteSprite();
 }
 //
-void drawUpdate(int num, int x, int y)
-{
-  stringUpdate.createSprite(50, 20);
-  stringUpdate.fillScreen(TFT_BLACK);
-  stringUpdate.setFreeFont(FSB9);
-  stringUpdate.setTextColor(TFT_ORANGE);
-  stringUpdate.setTextSize(1);
-  stringUpdate.drawNumber(num, 0, 3);
-  stringUpdate.drawString("%", 25, 3, GFXFF);
-  stringUpdate.pushSprite(x, y);
 
-}
 void drawPM10(int num, int x, int y)
 {
   stringPM10.createSprite(50, 20);
@@ -1226,18 +1235,43 @@ void t3CallSendData() {
       client.publish("v1/devices/me/telemetry", json.c_str());
     }
   }
-  //  delay(2000);
-  //  tft.fillRect(285, 0, nbiotWidth, nbiotHeight, TFT_BLACK); // Print the test text in the custom font
-  //tft.drawString(meta.rssi, nbiotWidth, nbiotHeight, GFXFF);
-  //delay(3000);
-  //tft.fillRect(270,32,32,0x9E4A);
-  //  if (connectWifi == true && WiFi.status() == WL_CONNECTED) {
-  //    client.disconnect();
-  //  }
+ 
 
 }
+
+
+void heartBeat() 
+{
+  // Sink current to drain charge from watchdog circuit
+  pinMode(WDTPin, OUTPUT);
+  digitalWrite(WDTPin, LOW);
+
+  // Return to high-Z
+  pinMode(WDTPin, INPUT);
+
+  
+  Serial.println("Heartbeat");
+  SerialBT.println("Heartbeat");
+}
+
+
 void loop() {
   ArduinoOTA.handle();
   runner.execute();
+  ms = millis();
+
+  if (ms % 300000 == 0)
+  {
+    heartBeat();
+  }
+
+if (ms % 600000 == 0)
+  {
+
+    Serial.println("Attach WiFi for，OTA "); Serial.println(WiFi.RSSI() );
+    SerialBT.println("Attach WiFi for OTA"); SerialBT.println(WiFi.RSSI() );
+    setupWIFI();
+    setupOTA();
+  }
 
 }
