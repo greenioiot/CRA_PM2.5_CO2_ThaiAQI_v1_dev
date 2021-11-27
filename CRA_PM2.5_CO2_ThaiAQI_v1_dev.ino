@@ -753,8 +753,8 @@ void printBME280Data()
   BME280::TempUnit tempUnit(BME280::TempUnit_Celsius);
   BME280::PresUnit presUnit(BME280::PresUnit_Pa);
   bme.read(pres, temp, hum, tempUnit, presUnit);
-  temp = temp-3;  //compensate
-
+  temp = temp - 6;  //compensate
+  hum = hum + 23;
 }
 
 void composeJson() {
