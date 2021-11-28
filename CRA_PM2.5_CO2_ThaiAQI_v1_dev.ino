@@ -148,6 +148,8 @@ PubSubClient client(wifiClient);
 HardwareSerial_NB_BC95 AISnb;
 
 float temp(NAN), hum(NAN), pres(NAN);
+float TempOffset = -8.0;
+float HumOffset = 26.0;
 
 // # Add On
 #include <TimeLib.h>
@@ -753,8 +755,8 @@ void printBME280Data()
   BME280::TempUnit tempUnit(BME280::TempUnit_Celsius);
   BME280::PresUnit presUnit(BME280::PresUnit_Pa);
   bme.read(pres, temp, hum, tempUnit, presUnit);
-  temp = temp - 6;  //compensate
-  hum = hum + 23;
+  temp = temp + TempOffset;  //compensate
+  hum = hum + HumOffset;
 }
 
 void composeJson() {
