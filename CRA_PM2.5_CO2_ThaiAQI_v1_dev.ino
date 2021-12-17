@@ -616,9 +616,9 @@ void setup() {
   String wifiName = "@AIRMASS2.5";
   wifiName.concat(String((uint32_t)ESP.getEfuseMac(), HEX));
   if (!wifiManager.autoConnect(wifiName.c_str())) {
-    //Serial.println("failed to connect and hit timeout");
+    Serial.println("failed to connect and hit timeout");
     //reset and try again, or maybe put it to deep sleep
-    //    ESP.reset();
+    ESP.restart();
     //delay(1000);
   }
 //  setupWIFI();
