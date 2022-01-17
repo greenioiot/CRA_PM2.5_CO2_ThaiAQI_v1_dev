@@ -90,7 +90,7 @@ EEPROMClass  eCO2BASELINE("eeprom2", 0x100);
 Scheduler runner;
 
 String pro = "";
-  
+
 #define CF_OL24 &Orbitron_Light_24
 #define CF_OL32 &Orbitron_Light_32
 
@@ -148,8 +148,8 @@ PubSubClient client(wifiClient);
 HardwareSerial_NB_BC95 AISnb;
 
 float temp(NAN), hum(NAN), pres(NAN);
-float TempOffset = -8.0;
-float HumOffset = 26.0;
+float TempOffset = -6.0;
+float HumOffset = 8.0;
 
 // # Add On
 #include <TimeLib.h>
@@ -157,8 +157,14 @@ float HumOffset = 26.0;
 #include "time.h"
 #include <ArduinoOTA.h>
 
-#define HOSTNAME "GreenIO"
+
+String HOSTNAME = "GreenIO";
 #define PASSWORD "green7650"
+
+const char* ssid = "greenio"; //replace "xxxxxx" with your WIFI's ssid
+const char* password = "green7650"; //replace "xxxxxx" with your WIFI's password
+
+
 
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 3600 * 7;
@@ -240,7 +246,7 @@ void setupOTA()
   //ArduinoOTA.setPort(8266);
 
   //Hostname defaults to esp8266-[ChipID]
-  ArduinoOTA.setHostname(HOSTNAME);
+  ArduinoOTA.setHostname(HOSTNAME.c_str());
 
   //No authentication by default
   ArduinoOTA.setPassword(PASSWORD);
@@ -311,7 +317,7 @@ void setupOTA()
         break;
     }
 
-    
+
     Serial.println(info);
     SerialBT.println(info);
     SerialBT.println(pro);
@@ -321,26 +327,48 @@ void setupOTA()
   ArduinoOTA.begin();
 }
 
+
 void setupWIFI()
 {
-  WiFi.setHostname(HOSTNAME);
+
+  Serial.println("Connecting...");
+  Serial.println(String(ssid));
+  SerialBT.println("Connecting...");
+  SerialBT.println(String(ssid));
+
+  //连接WiFi，删除旧的配置，关闭WIFI，准备重新配置
+  //  WiFi.disconnect(true);
+  //  delay(1000);
+
+  WiFi.mode(WIFI_STA);
+  //WiFi.onEvent(WiFiEvent);
+  WiFi.setAutoConnect(true);
+  WiFi.setAutoReconnect(true);    //断开WiFi后自动重新连接,ESP32不可用
+  WiFi.setHostname(HOSTNAME.c_str());
+  WiFi.begin(ssid, password);
+
 
   //等待5000ms，如果没有连接上，就继续往下
   //不然基本功能不可用
   byte count = 0;
-  while (WiFi.status() != WL_CONNECTED && count < 10)
-  {
-    count ++;
-    delay(500);
-    Serial.print(".");
-  }
+//  while (WiFi.status() != WL_CONNECTED && count < 10)
+//  {
+//    count ++;
+//    delay(1000);
+//    Serial.print(".");
+//    SerialBT.print("Count:");
+//    SerialBT.println(count);
+//    if(count>1000000) ESP.restart();
+//  }
 
 
-  if (WiFi.status() == WL_CONNECTED)
+  if (WiFi.status() == WL_CONNECTED) {
     Serial.println("Connecting...OK.");
-  else
+    SerialBT.println("Connecting...OK.");
+  } else {
     Serial.println("Connecting...Failed");
-
+    SerialBT.println("Connecting...Failed");
+  }
 }
 
 void writeString(char add, String data)
@@ -428,7 +456,7 @@ void getIP(String IP, String Port, String Data) {
           Serial.print("Server IP : ");
           Serial.println(serverIP);
         }
-        //SerialBT.println(json);
+        SerialBT.println(json);
         Serial.println(json);
         //Serial.print("epoch:");
         //Serial.println(_epoch);
@@ -534,6 +562,7 @@ void _initBME280()
   while (!bme.begin())
   {
     Serial.println("Could not find BME280 sensor!");
+    SerialBT.println("Could not find BME280 sensor!");
     delay(1000);
   }
 
@@ -548,6 +577,8 @@ void _initBME280()
       break;
     default:
       Serial.println(F("Found UNKNOWN sensor! Error!"));
+
+
   }
 }
 
@@ -578,24 +609,31 @@ void setup() {
   digitalWrite(swTFTPin, LOW);    // turn the LED off by making the voltage LOW
   _initLCD();
 
-  
 
-
-//  pinMode(4, OUTPUT);
-//  digitalWrite(4, HIGH);
-  //delay(500);
 
   deviceToken = AISnb.getNCCID();
   //Serial.println(AISnb.cgatt(1));
   if (EEPROM.read(10) == 255 ) {
     _writeEEPROM("147.50.151.130");
+    Serial.println("getDefault IP");
+    SerialBT.print("getDefault IP"); Serial.println(serverIP);
   }
+
   serverIP = read_String(10);
+  if (serverIP.length() < 10) serverIP = "147.50.151.130";
+
+  Serial.println("serverIP");
+  Serial.println(serverIP);
   while (nbErrorTime < 10) {
+
     meta = AISnb.getSignal();
     Serial.print("meta.rssi:"); Serial.println(meta.rssi);
+    SerialBT.print("meta.rssi:"); SerialBT.println(meta.rssi);
+
+
     if (!meta.rssi.equals("N/A")) {
       if (meta.rssi.toInt() > -110) {
+        nbErrorTime++;
         break;
       } else {
         errorTimeDisplay(nbErrorTime);
@@ -607,42 +645,48 @@ void setup() {
       nbErrorTime++;
       delay(1000);
     }
+    Serial.print("nbErrorTime:"); Serial.println(nbErrorTime);
+    SerialBT.print("nbErrorTime:"); SerialBT.println(nbErrorTime);
   }
-  tft.fillScreen(TFT_DARKCYAN);
-  tft.drawString("Wait for WiFi Setting (Timeout 120 Sec)", tft.width() / 2, tft.height() / 2, GFXFF);
-  wifiManager.setTimeout(120);
+  SerialBT.print("WiFi:Setting");
 
-  wifiManager.setAPCallback(configModeCallback);
-  String wifiName = "@AIRMASS2.5";
-  wifiName.concat(String((uint32_t)ESP.getEfuseMac(), HEX));
-  if (!wifiManager.autoConnect(wifiName.c_str())) {
-    Serial.println("failed to connect and hit timeout");
-    //reset and try again, or maybe put it to deep sleep
-    ESP.restart();
-    //delay(1000);
-  }
-//  setupWIFI();
-  
+  tft.fillScreen(TFT_DARKCYAN);
+  tft.drawString("Wait for WiFi Setting (Timeout 60 Sec)", tft.width() / 2, tft.height() / 2, GFXFF);
+  //  wifiManager.setTimeout(60);
+  //
+  //  wifiManager.setAPCallback(configModeCallback);
+  //  String wifiName = "@AIRMASS2.5";
+  //  wifiName.concat(String((uint32_t)ESP.getEfuseMac(), HEX));
+  //  if (!wifiManager.autoConnect(wifiName.c_str())) {
+  //    Serial.println("failed to connect and hit timeout");
+  //    SerialBT.println("failed to connect and hit timeout");
+  //    //reset and try again, or maybe put it to deep sleep
+  ////    ESP.restart();
+  //    //delay(1000);
+  //  }
+  setupWIFI();
+
   setupOTA();
-  if (nbErrorTime == 10) {
-    connectWifi = true;
-  }
+//  if (nbErrorTime == 10) {
+//    connectWifi = true;
+//  }
   if (connectWifi == false) {
     json = "{\"_type\":\"retrattr\",\"Tn\":\"";
     json.concat(deviceToken);
     json.concat("\",\"keys\":[\"epoch\",\"ip\"]}");
     getIP(serverIP, serverPort, json);
   }
-  if (connectWifi == true) {
-    configTime(gmtOffset_sec, 0, ntpServer);
-    client.setServer( "mqtt.thingcontrol.io", PORT );
-  }
+  //  if (connectWifi == true) {
+  //    configTime(gmtOffset_sec, 0, ntpServer);
+  //    client.setServer( "mqtt.thingcontrol.io", PORT );
+  //  }
 
-
-
+  Serial.println(json);
+  SerialBT.println(json);
   //  previousMillis = millis();
   hwSerial.begin(9600, SERIAL_8N1, SERIAL1_RXPIN, SERIAL1_TXPIN);
   _initBME280();
+
 
   _initSGP30();
   runner.init();
@@ -676,10 +720,11 @@ void setup() {
   tft.fillScreen(TFT_BLACK);            // Clear screen
 
   tft.fillRect(5, 185, tft.width() - 15, 5, TFT_GREEN); // Print the test text in the custom font
-  tft.fillRect(70, 185, tft.width() - 15, 5, TFT_ORANGE); // Print the test text in the custom font
-  tft.fillRect(135, 185, tft.width() - 15, 5, TFT_RED); // Print the test text in the custom font
-  tft.fillRect(200, 185, tft.width() - 15, 5, TFT_PURPLE); // Print the test text in the custom font
-  tft.fillRect(260, 185, tft.width() - 15, 5, TFT_BURGUNDY); // Print the test text in the custom font
+  tft.fillRect(63, 185, tft.width() - 15, 5, TFT_YELLOW); // Print the test text in the custom font
+  tft.fillRect(113, 185, tft.width() - 15, 5, TFT_ORANGE); // Print the test text in the custom font
+  tft.fillRect(166, 185, tft.width() - 15, 5, TFT_RED); // Print the test text in the custom font
+  tft.fillRect(219, 185, tft.width() - 15, 5, TFT_PURPLE); // Print the test text in the custom font
+  tft.fillRect(272, 185, tft.width() - 15, 5, TFT_BURGUNDY); // Print the test text in the custom font
 }
 
 
@@ -702,7 +747,7 @@ void splash() {
   xpos = tft.width() / 2; // Half the screen width
   ypos = 150;
   tft.drawString("AIRMASS2.5 Inspector", xpos, ypos, GFXFF);  // Draw the text string in the selected GFX free font
-  tft.drawString("version2.2", xpos, ypos+20, GFXFF);  // Draw the text string in the selected GFX free font
+  tft.drawString("version2.8", xpos, ypos + 20, GFXFF); // Draw the text string in the selected GFX free font
   AISnb.debug = true;
   AISnb.setupDevice(serverPort);
   //
@@ -725,7 +770,7 @@ void splash() {
   delay(5000);
 
   tft.setTextFont(GLCD);
-  
+
   tft.fillScreen(TFT_DARKCYAN);
   // Select the font
   ypos += tft.fontHeight(GFXFF);                      // Get the font height and move ypos down
@@ -921,27 +966,25 @@ void t2CallShowEnv() {
     ind.createSprite(320, 10);
     ind.fillSprite(TFT_BLACK);
 
-    if ((data.pm25_env >= 0) && (data.pm25_env <= 25)) {
+   if ((data.pm25_env >= 0) && (data.pm25_env <= 15.4)) {
       tft.setWindow(0, 25, 55, 55);
       tft.pushImage(tft.width() - lv1Width - 6, 45, lv1Width, lv1Height, lv1);
-      ind.fillTriangle(5, 0, 10, 5, 15, 0, FILLCOLOR1);
-
-    } else if ((data.pm25_env > 25) && (data.pm25_env <= 37)  ) {
+      ind.fillTriangle(0, 0, 5, 5, 10, 0, FILLCOLOR1);
+    } else if ((data.pm25_env >= 15.5) && (data.pm25_env <= 40.4)  ) {
       tft.pushImage(tft.width() - lv2Width - 6, 45, lv2Width, lv2Height, lv2);
-      ind.fillTriangle(75, 0, 80, 5, 85, 0, FILLCOLOR1);
-
-    } else  if ((data.pm25_env > 37) && (data.pm25_env <= 50)  ) {
+      ind.fillTriangle(55, 0, 60, 5, 65, 0, FILLCOLOR1);
+    } else  if ((data.pm25_env >= 40.5) && (data.pm25_env <= 65.4)  ) {
       tft.pushImage(tft.width() - lv3Width - 6, 45, lv3Width, lv3Height, lv3);
-      ind.fillTriangle(130, 0, 135, 5, 140, 0, FILLCOLOR1);
-
-    } else  if ((data.pm25_env > 50) && (data.pm25_env <= 90)  ) {
+      ind.fillTriangle(105, 0, 110, 5, 115, 0, FILLCOLOR1);
+    } else  if ((data.pm25_env >= 65.5) && (data.pm25_env <= 150.4)  ) {
       tft.pushImage(tft.width() - lv4Width - 6, 45, lv4Width, lv4Height, lv4);
-      ind.fillTriangle(195, 0, 200, 5, 205, 0, FILLCOLOR1);
-
-    } else  if ((data.pm25_env > 90)) {
+      ind.fillTriangle(155, 0, 160, 5, 165, 0, FILLCOLOR1);
+    } else  if ((data.pm25_env >= 150.5) && (data.pm25_env <= 250.4)  ) {
       tft.pushImage(tft.width() - lv5Width - 6, 45, lv5Width, lv5Height, lv5);
-      ind.fillTriangle(255, 0, 260, 5, 265, 0, FILLCOLOR1);
-
+      ind.fillTriangle(210, 0, 215, 5, 220, 0, FILLCOLOR1);
+    } else {
+      tft.pushImage(tft.width() - lv6Width - 6, 45, lv6Width, lv6Height, lv6);
+      ind.fillTriangle(265, 0, 270, 5, 275, 0, FILLCOLOR1);
     }
     ind.pushSprite(29, 175);
     ind.deleteSprite();
@@ -1095,6 +1138,7 @@ void t1CallGetProbe() {
     wtd = 0;
   } else {
     ready2display = false;
+    ESP.restart();
 
   }
 
@@ -1237,12 +1281,12 @@ void t3CallSendData() {
       client.publish("v1/devices/me/telemetry", json.c_str());
     }
   }
- 
+
 
 }
 
 
-void heartBeat() 
+void heartBeat()
 {
   // Sink current to drain charge from watchdog circuit
   pinMode(WDTPin, OUTPUT);
@@ -1251,7 +1295,7 @@ void heartBeat()
   // Return to high-Z
   pinMode(WDTPin, INPUT);
 
-  
+
   Serial.println("Heartbeat");
   SerialBT.println("Heartbeat");
 }
@@ -1267,7 +1311,7 @@ void loop() {
     heartBeat();
   }
 
-if (ms % 600000 == 0)
+  if (ms % 600000 == 0)
   {
 
     Serial.println("Attach WiFi for，OTA "); Serial.println(WiFi.RSSI() );
