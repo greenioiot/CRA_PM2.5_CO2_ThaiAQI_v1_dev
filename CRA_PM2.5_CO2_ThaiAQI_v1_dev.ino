@@ -351,15 +351,15 @@ void setupWIFI()
   //等待5000ms，如果没有连接上，就继续往下
   //不然基本功能不可用
   byte count = 0;
-//  while (WiFi.status() != WL_CONNECTED && count < 10)
-//  {
-//    count ++;
-//    delay(1000);
-//    Serial.print(".");
-//    SerialBT.print("Count:");
-//    SerialBT.println(count);
-//    if(count>1000000) ESP.restart();
-//  }
+  //  while (WiFi.status() != WL_CONNECTED && count < 10)
+  //  {
+  //    count ++;
+  //    delay(1000);
+  //    Serial.print(".");
+  //    SerialBT.print("Count:");
+  //    SerialBT.println(count);
+  //    if(count>1000000) ESP.restart();
+  //  }
 
 
   if (WiFi.status() == WL_CONNECTED) {
@@ -410,20 +410,19 @@ String read_String(char add)
 
 void getIP(String IP, String Port, String Data) {
   json = "";
+  int countRetry = 0;
   do {
     //    if (AISnb.pingIP(serverIP).status == false) {
     //      ESP.restart();
     //    }
     UDPSend udp = AISnb.sendUDPmsgStr(IP, Port, Data);
 
-    //String nccid = AISnb.getNCCID();
-    //Serial.print("nccid:");
-    //Serial.println(nccid);
 
     UDPReceive resp = AISnb.waitResponse();
     AISnb.receive_UDP(resp);
     Serial.print("waitData:");
     Serial.println(resp.data);
+    SerialBT.println(resp.data);
     if (udp.status == false) {
       connectWifi = true;
       break;
@@ -456,13 +455,14 @@ void getIP(String IP, String Port, String Data) {
           Serial.print("Server IP : ");
           Serial.println(serverIP);
         }
-        SerialBT.println(json);
-        Serial.println(json);
-        //Serial.print("epoch:");
-        //Serial.println(_epoch);
+
       }
     }
     //
+    SerialBT.println(json);
+    Serial.println(json);
+    countRetry ++;
+    if (countRetry > 10) ESP.restart();
   } while (validEpoc);
 }
 Task t6(3600000, TASK_FOREVER, &t6CheckTime);
@@ -471,7 +471,7 @@ void t6CheckTime() {
   if (connectWifi == false) {
     if (_epoch != 0 && (millis() - time_s) > 300000 && hour(_epoch + ((millis() - time_s) / 1000) + (7 * 3600)) == 0) {
       //Serial.println("Restart");
-      ESP.restart();
+      //      ESP.restart();
     }
   } else {
     if (!getLocalTime(&timeinfo)) {
@@ -482,7 +482,7 @@ void t6CheckTime() {
     Serial.print("timeinfo.tm_min:"); Serial.println(timeinfo.tm_min);
     if (( timeinfo.tm_hour == 0) && ( timeinfo.tm_min < 10) ) {
       Serial.println("Restart @ midnight2");
-      ESP.restart();
+      //      ESP.restart();
     }
   }
 }
@@ -667,9 +667,9 @@ void setup() {
   setupWIFI();
 
   setupOTA();
-//  if (nbErrorTime == 10) {
-//    connectWifi = true;
-//  }
+  //  if (nbErrorTime == 10) {
+  //    connectWifi = true;
+  //  }
   if (connectWifi == false) {
     json = "{\"_type\":\"retrattr\",\"Tn\":\"";
     json.concat(deviceToken);
@@ -747,7 +747,7 @@ void splash() {
   xpos = tft.width() / 2; // Half the screen width
   ypos = 150;
   tft.drawString("AIRMASS2.5 Inspector", xpos, ypos, GFXFF);  // Draw the text string in the selected GFX free font
-  tft.drawString("version2.8", xpos, ypos + 20, GFXFF); // Draw the text string in the selected GFX free font
+  tft.drawString("version2.9", xpos, ypos + 20, GFXFF); // Draw the text string in the selected GFX free font
   AISnb.debug = true;
   AISnb.setupDevice(serverPort);
   //
@@ -966,7 +966,7 @@ void t2CallShowEnv() {
     ind.createSprite(320, 10);
     ind.fillSprite(TFT_BLACK);
 
-   if ((data.pm25_env >= 0) && (data.pm25_env <= 15.4)) {
+    if ((data.pm25_env >= 0) && (data.pm25_env <= 15.4)) {
       tft.setWindow(0, 25, 55, 55);
       tft.pushImage(tft.width() - lv1Width - 6, 45, lv1Width, lv1Height, lv1);
       ind.fillTriangle(0, 0, 5, 5, 10, 0, FILLCOLOR1);
@@ -1143,8 +1143,6 @@ void t1CallGetProbe() {
   }
 
 
-  if (wtd > maxwtd)
-    ESP.restart();
 
   printBME280Data();
   getDataSGP30();
