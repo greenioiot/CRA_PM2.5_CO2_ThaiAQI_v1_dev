@@ -27,6 +27,7 @@
 #define WDTPin    4
 #define swTFTPin 32
 unsigned long ms;
+
 //
 #include "BluetoothSerial.h"
 
@@ -41,6 +42,7 @@ BluetoothSerial SerialBT;
 
 //#include <PubSubClient.h>
 #include <WiFi.h>
+#include "time.h"
 //#include <ESP8266WebServer.h>
 #include <DNSServer.h>
 #include <WiFiManager.h>
@@ -74,8 +76,8 @@ BluetoothSerial SerialBT;
 
 // Instantiate eeprom objects with parameter/argument names and sizes
 
-EEPROMClass  TVOCBASELINE("eeprom1", 0x200);
-EEPROMClass  eCO2BASELINE("eeprom2", 0x100);
+//EEPROMClass  TVOCBASELINE("eeprom1", 0x200);
+//EEPROMClass  eCO2BASELINE("eeprom2", 0x100);
 
 
 #define _TASK_SLEEP_ON_IDLE_RUN
@@ -154,7 +156,7 @@ float HumOffset = 8.0;
 // # Add On
 #include <TimeLib.h>
 #include <ArduinoJson.h>
-#include "time.h"
+ 
 #include <ArduinoOTA.h>
 
 
@@ -175,7 +177,10 @@ StaticJsonDocument<400> doc;
 bool validEpoc = false;
 unsigned long time_s = 0;
 unsigned long _epoch = 0;
-struct tm timeinfo;
+
+char timeHour[3];
+char timeWeekDay[10];
+
 WiFiManager wifiManager;
 //const boolean isCALIBRATESGP30 = false;
 Adafruit_SGP30 sgp;
@@ -467,23 +472,32 @@ void getIP(String IP, String Port, String Data) {
 }
 Task t6(3600000, TASK_FOREVER, &t6CheckTime);
 void t6CheckTime() {
+
   //Serial.println("Check Time");
+
+
+
+
+
   if (connectWifi == false) {
     if (_epoch != 0 && (millis() - time_s) > 300000 && hour(_epoch + ((millis() - time_s) / 1000) + (7 * 3600)) == 0) {
       //Serial.println("Restart");
       //      ESP.restart();
     }
   } else {
+   
     if (!getLocalTime(&timeinfo)) {
-      //Serial.println("Failed to obtain time");
+      Serial.println("Failed to obtain time");
       return;
     }
-    Serial.print("timeinfo.tm_hour:"); Serial.println(timeinfo.tm_hour);
-    Serial.print("timeinfo.tm_min:"); Serial.println(timeinfo.tm_min);
-    if (( timeinfo.tm_hour == 0) && ( timeinfo.tm_min < 10) ) {
-      Serial.println("Restart @ midnight2");
-      //      ESP.restart();
-    }
+
+    //    Serial.print("timeinfo.tm_hour:"); Serial.println(timeinfo.tm_hour);
+    //    Serial.print("timeinfo.tm_min:"); Serial.println(timeinfo.tm_min);
+    //    if (( timeinfo.tm_hour == 0) && ( timeinfo.tm_min < 10) ) {
+    //      Serial.println("Restart @ midnight2");
+    //      //      ESP.restart();
+    //    }
+
   }
 }
 
@@ -525,8 +539,8 @@ void calibrate() {
   uint16_t readTvoc = 0;
   uint16_t readCo2 = 0;
   Serial.println("Done Calibrate");
-  TVOCBASELINE.get(0, readTvoc);
-  eCO2BASELINE.get(0, readCo2);
+  TVOCBASELINE.get(0, 0x7DD9);
+  eCO2BASELINE.get(0, 0x8512);
 
   //  Serial.println("Calibrate");
   Serial.print("****Baseline values: eCO2: 0x"); Serial.print(readCo2, HEX);
@@ -600,6 +614,21 @@ void _initSGP30 () {
 
   calibrate();
 }
+
+
+void printLocalTime() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("Failed to obtain time");
+    return;
+  }
+  char timeFull[23];
+  strftime(timeFull, 23, "%d/%b/%Y %H:%M:%S", &timeinfo);
+  Serial.println(timeFull);
+  SerialBT.println(timeFull);
+}
+
+
 void setup() {
   Serial.begin(115200);
   SerialBT.begin(HOSTNAME); //Bluetooth device name
@@ -652,24 +681,11 @@ void setup() {
 
   tft.fillScreen(TFT_DARKCYAN);
   tft.drawString("Wait for WiFi Setting (Timeout 60 Sec)", tft.width() / 2, tft.height() / 2, GFXFF);
-  //  wifiManager.setTimeout(60);
-  //
-  //  wifiManager.setAPCallback(configModeCallback);
-  //  String wifiName = "@AIRMASS2.5";
-  //  wifiName.concat(String((uint32_t)ESP.getEfuseMac(), HEX));
-  //  if (!wifiManager.autoConnect(wifiName.c_str())) {
-  //    Serial.println("failed to connect and hit timeout");
-  //    SerialBT.println("failed to connect and hit timeout");
-  //    //reset and try again, or maybe put it to deep sleep
-  ////    ESP.restart();
-  //    //delay(1000);
-  //  }
+
   setupWIFI();
 
   setupOTA();
-  //  if (nbErrorTime == 10) {
-  //    connectWifi = true;
-  //  }
+
   if (connectWifi == false) {
     json = "{\"_type\":\"retrattr\",\"Tn\":\"";
     json.concat(deviceToken);
@@ -999,6 +1015,7 @@ String a0(int n) {
 
 void t7showTime() {
 
+ 
   topNumber.createSprite(200, 40);
   //  stringPM1.fillSprite(TFT_GREEN);
   topNumber.setFreeFont(FS9);
@@ -1016,11 +1033,17 @@ void t7showTime() {
   if (connectWifi == false) {
     timeS = a0(day(NowTime)) + "/" + a0(month(NowTime)) + "/" + String(year(NowTime)) + "  [" + a0(hour(NowTime)) + ":" + a0(minute(NowTime)) + "]";
   } else {
+    struct tm timeinfo;
     if (!getLocalTime(&timeinfo)) {
-      //Serial.println("Failed to obtain time");
+      Serial.println("Failed to obtain time");
+      ESP.restart();
       return;
     }
-    timeS = a0(timeinfo.tm_mday) + "/" + a0(timeinfo.tm_mon + 1) + "/" + String(timeinfo.tm_year + 1900) + "  [" + a0(timeinfo.tm_hour) + ":" + a0(timeinfo.tm_min) + "]";
+     struct tm timeinfo;
+    char timeFull[23];
+    strftime(timeFull, 23, "%d/%b/%Y %H:%M:%S", &timeinfo);
+    timeS = timeFull;
+    //    timeS = a0(timeinfo.tm_mday) + "/" + a0(timeinfo.tm_mon + 1) + "/" + String(timeinfo.tm_year + 1900) + "  [" + a0(timeinfo.tm_hour) + ":" + a0(timeinfo.tm_min) + "]";
   }
   topNumber.drawString(timeS, 5, 10, GFXFF);
   //Serial.println(timeS);
@@ -1307,6 +1330,7 @@ void loop() {
   if (ms % 300000 == 0)
   {
     heartBeat();
+    printLocalTime();
   }
 
   if (ms % 600000 == 0)
