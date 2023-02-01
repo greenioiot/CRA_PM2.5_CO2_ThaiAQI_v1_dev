@@ -42,8 +42,7 @@ BluetoothSerial SerialBT;
 
 //#include <PubSubClient.h>
 #include <WiFi.h>
-#include "time.h"
-//#include <ESP8266WebServer.h>
+
 #include <DNSServer.h>
 #include <WiFiManager.h>
 #include <WiFiClientSecure.h>
@@ -65,15 +64,13 @@ BluetoothSerial SerialBT;
 #include "lv4.h"
 #include "lv5.h"
 #include "lv6.h"
-//#include "BluetoothSerial.h"
-//#include "Splash2.h"
 #include "NBIOT.h"
-
+#include <TimeLib.h>
 
 //#include "RTClib.h"
 #include "Free_Fonts.h"
-#include "EEPROM.h"
-
+//#include "EEPROM.h"
+struct tm timeinfo;
 // Instantiate eeprom objects with parameter/argument names and sizes
 
 //EEPROMClass  TVOCBASELINE("eeprom1", 0x200);
@@ -119,14 +116,14 @@ int wtd = 0;
 int maxwtd = 10;
 
 int tftMax = 160;
-
+int _countFailed = 0;
 Adafruit_MLX90614 mlx = Adafruit_MLX90614();
 
 
 
 int error;
 
-signal meta ;
+Signal meta ;
 String json = "";
 String attr = "";
 
@@ -150,17 +147,17 @@ PubSubClient client(wifiClient);
 HardwareSerial_NB_BC95 AISnb;
 
 float temp(NAN), hum(NAN), pres(NAN);
-float TempOffset = -6.0;
-float HumOffset = 8.0;
+float TempOffset = -11.0;
+float HumOffset1 = 0.25;
+float HumOffset2 = 0.30;
 
 // # Add On
-#include <TimeLib.h>
+
 #include <ArduinoJson.h>
- 
 #include <ArduinoOTA.h>
 
 
-String HOSTNAME = "GreenIO";
+String HOSTNAME = "GreenIOV3.1";
 #define PASSWORD "green7650"
 
 const char* ssid = "greenio"; //replace "xxxxxx" with your WIFI's ssid
@@ -211,6 +208,7 @@ TFT_eSprite T = TFT_eSprite(&tft);
 int status = WL_IDLE_STATUS;
 String downlink = "";
 char *bString;
+
 int PORT = 8883;
 
 struct pms7003data {
@@ -279,12 +277,8 @@ void setupOTA()
   {
     pro = String(progress / (total / 100)) + "%";
     int progressbar = (progress / (total / 100));
-    //int progressbar = (progress / 5) % 100;
-    //int pro = progress / (total / 100);
 
     drawUpdate(progressbar, 170, 13);
-    //    tft.drawString(title6, 190, 20, GFXFF); // Print the test text in the custom font
-
 
     Serial.printf(".");
     SerialBT.printf(".");
@@ -356,15 +350,6 @@ void setupWIFI()
   //等待5000ms，如果没有连接上，就继续往下
   //不然基本功能不可用
   byte count = 0;
-  //  while (WiFi.status() != WL_CONNECTED && count < 10)
-  //  {
-  //    count ++;
-  //    delay(1000);
-  //    Serial.print(".");
-  //    SerialBT.print("Count:");
-  //    SerialBT.println(count);
-  //    if(count>1000000) ESP.restart();
-  //  }
 
 
   if (WiFi.status() == WL_CONNECTED) {
@@ -375,51 +360,49 @@ void setupWIFI()
     SerialBT.println("Connecting...Failed");
   }
 }
+//
+//void writeString(char add, String data)
+//{
+//  int _size = data.length();
+//  int i;
+//  for (i = 0; i < _size; i++)
+//  {
+//    EEPROM.write(add + i, data[i]);
+//  }
+//  EEPROM.write(add + _size, '\0'); //Add termination null character for String Data
+//  EEPROM.commit();
+//}
+//
+//void _writeEEPROM(String data) {
+//  //Serial.print("Writing Data:");
+//  //Serial.println(data);
+//  writeString(10, data);  //Address 10 and String type data
+//  delay(10);
+//}
 
-void writeString(char add, String data)
-{
-  int _size = data.length();
-  int i;
-  for (i = 0; i < _size; i++)
-  {
-    EEPROM.write(add + i, data[i]);
-  }
-  EEPROM.write(add + _size, '\0'); //Add termination null character for String Data
-  EEPROM.commit();
-}
-
-void _writeEEPROM(String data) {
-  //Serial.print("Writing Data:");
-  //Serial.println(data);
-  writeString(10, data);  //Address 10 and String type data
-  delay(10);
-}
-
-String read_String(char add)
-{
-  int i;
-  char data[100]; //Max 100 Bytes
-  int len = 0;
-  unsigned char k;
-  k = EEPROM.read(add);
-  while (k != '\0' && len < 500) //Read until null character
-  {
-    k = EEPROM.read(add + len);
-    data[len] = k;
-    len++;
-  }
-  data[len] = '\0';
-
-  return String(data);
-}
+//String read_String(char add)
+//{
+//  int i;
+//  char data[100]; //Max 100 Bytes
+//  int len = 0;
+//  unsigned char k;
+//  k = EEPROM.read(add);
+//  while (k != '\0' && len < 500) //Read until null character
+//  {
+//    k = EEPROM.read(add + len);
+//    data[len] = k;
+//    len++;
+//  }
+//  data[len] = '\0';
+//
+//  return String(data);
+//}
 
 void getIP(String IP, String Port, String Data) {
   json = "";
   int countRetry = 0;
   do {
-    //    if (AISnb.pingIP(serverIP).status == false) {
-    //      ESP.restart();
-    //    }
+
     UDPSend udp = AISnb.sendUDPmsgStr(IP, Port, Data);
 
 
@@ -442,8 +425,10 @@ void getIP(String IP, String Port, String Data) {
 
       // Test if parsing succeeds.
       if (error) {
-        //Serial.print(F("deserializeJson() failed: "));
-        //Serial.println(error.f_str());
+        SerialBT.print(F("deserializeJson() failed: "));
+        SerialBT.println(error.f_str());
+        Serial.print(F("deserializeJson() failed: "));
+        Serial.println(error.f_str());
         validEpoc = true;
         delay(1000);
       } else {
@@ -453,96 +438,54 @@ void getIP(String IP, String Port, String Data) {
         String ip = doc["ip"];
         if (ip != "null") {
           serverIP = ip;
-          _writeEEPROM(serverIP);
-          if (EEPROM.commit()) {
-            Serial.println("EEPROM successfully committed");
-          }
           Serial.print("Server IP : ");
           Serial.println(serverIP);
         }
-
+        TempOffset = doc["tO"];
+        HumOffset1 = doc["hO1"];
+        HumOffset2 = doc["hO2"];
       }
     }
     //
     SerialBT.println(json);
     Serial.println(json);
     countRetry ++;
-    if (countRetry > 10) ESP.restart();
+    if (countRetry > 10) {
+      Serial.println("Caution countRetry > 10 Restart");
+
+      ESP.restart();
+    }
   } while (validEpoc);
 }
-Task t6(3600000, TASK_FOREVER, &t6CheckTime);
-void t6CheckTime() {
-
-  //Serial.println("Check Time");
 
 
 
 
-
-  if (connectWifi == false) {
-    if (_epoch != 0 && (millis() - time_s) > 300000 && hour(_epoch + ((millis() - time_s) / 1000) + (7 * 3600)) == 0) {
-      //Serial.println("Restart");
-      //      ESP.restart();
-    }
-  } else {
-   
-    if (!getLocalTime(&timeinfo)) {
-      Serial.println("Failed to obtain time");
-      return;
-    }
-
-    //    Serial.print("timeinfo.tm_hour:"); Serial.println(timeinfo.tm_hour);
-    //    Serial.print("timeinfo.tm_min:"); Serial.println(timeinfo.tm_min);
-    //    if (( timeinfo.tm_hour == 0) && ( timeinfo.tm_min < 10) ) {
-    //      Serial.println("Restart @ midnight2");
-    //      //      ESP.restart();
-    //    }
-
-  }
-}
-
-// Callback methods prototypes
-void tCallback();
 void t1CallGetProbe();
 void t2CallShowEnv();
 void t3CallSendData();
 void t4CallPrintPMS7003();
 void t5CallSendAttribute();
 // Tasks
-Task t1(2000, TASK_FOREVER, &t1CallGetProbe);  //adding task to the chain on creation
-Task t2(2000, TASK_FOREVER, &t2CallShowEnv);
+Task t1(10000, TASK_FOREVER, &t1CallGetProbe);  //adding task to the chain on creation
+Task t2(10000, TASK_FOREVER, &t2CallShowEnv);
 Task t3(60000, TASK_FOREVER, &t3CallSendData);
 
-Task t4(2000, TASK_FOREVER, &t4CallPrintPMS7003);  //adding task to the chain on creation
+Task t4(60000, TASK_FOREVER, &t4CallPrintPMS7003);  //adding task to the chain on creation
 Task t5(10400000, TASK_FOREVER, &t5CallSendAttribute);  //adding task to the chain on creation
+//Task t6(3600000, TASK_FOREVER, &t6CheckTime);
 Task t7(500, TASK_FOREVER, &t7showTime);
 
-void tCallback() {
-  //  Scheduler &s = Scheduler::currentScheduler();
-  //  Task &t = s.currentTask();
 
-  //  Serial.print("Task: "); Serial.print(t.getId()); Serial.print(":\t");
-  //  Serial.print(millis()); Serial.print("\tStart delay = "); Serial.println(t.getStartDelay());
-  //  delay(10);
-
-  if (t1.isFirstIteration()) {
-    runner.addTask(t2);
-    t2.enable();
-    //    Serial.println("t1CallgetProbe: enabled t2CallshowEnv and added to the chain");
-  }
-
-
-}
 struct pms7003data data;
 //
 void calibrate() {
-  uint16_t readTvoc = 0;
-  uint16_t readCo2 = 0;
+  uint16_t readTvoc = 0x7DD9;
+  uint16_t readCo2 = 0x8512;
   Serial.println("Done Calibrate");
-  TVOCBASELINE.get(0, 0x7DD9);
-  eCO2BASELINE.get(0, 0x8512);
+ 
 
-  //  Serial.println("Calibrate");
+  Serial.println("Calibrate");
   Serial.print("****Baseline values: eCO2: 0x"); Serial.print(readCo2, HEX);
   Serial.print(" & TVOC: 0x"); Serial.println(readTvoc, HEX);
   sgp.setIAQBaseline(readCo2, readTvoc);
@@ -556,192 +499,6 @@ void configModeCallback (WiFiManager *myWiFiManager) {
   Serial.println(myWiFiManager->getConfigPortalSSID());
 }
 
-
-void _initLCD() {
-  tft.fillScreen(TFT_BLACK);
-  // TFT
-  splash();
-  // MLX
-  mlx.begin();
-}
-
-void _initBME280()
-{
-  while (!Serial) {} // Wait
-
-  delay(200);
-
-  Wire.begin(21, 22);
-
-  while (!bme.begin())
-  {
-    Serial.println("Could not find BME280 sensor!");
-    SerialBT.println("Could not find BME280 sensor!");
-    delay(1000);
-  }
-
-  // bme.chipID(); // Deprecated. See chipModel().
-  switch (bme.chipModel())
-  {
-    case BME280::ChipModel_BME280:
-      //      Serial.println(F("Found BME280 sensor! Success."));
-      break;
-    case BME280::ChipModel_BMP280:
-      //      Serial.println(F("Found BMP280 sensor! No Humidity available."));
-      break;
-    default:
-      Serial.println(F("Found UNKNOWN sensor! Error!"));
-
-
-  }
-}
-
-void errorTimeDisplay(int i) {
-  tft.fillScreen(TFT_DARKCYAN);
-  int xpos = tft.width() / 2; // Half the screen width
-  int ypos = tft.height() / 2;
-  tft.drawString("Connect NB failed " + String(i + 1) + " times", xpos, ypos, GFXFF);
-}
-void _initSGP30 () {
-  if (! sgp.begin()) {
-    Serial.println("Sensor not found :(");
-    while (1);
-  }
-  Serial.print("Found SGP30 serial #");
-  Serial.print(sgp.serialnumber[0], HEX);
-  Serial.print(sgp.serialnumber[1], HEX);
-  Serial.println(sgp.serialnumber[2], HEX);
-
-  calibrate();
-}
-
-
-void printLocalTime() {
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) {
-    Serial.println("Failed to obtain time");
-    return;
-  }
-  char timeFull[23];
-  strftime(timeFull, 23, "%d/%b/%Y %H:%M:%S", &timeinfo);
-  Serial.println(timeFull);
-  SerialBT.println(timeFull);
-}
-
-
-void setup() {
-  Serial.begin(115200);
-  SerialBT.begin(HOSTNAME); //Bluetooth device name
-  SerialBT.println(HOSTNAME);
-  EEPROM.begin(512);
-  pinMode(swTFTPin, OUTPUT);
-  digitalWrite(swTFTPin, LOW);    // turn the LED off by making the voltage LOW
-  _initLCD();
-
-
-
-  deviceToken = AISnb.getNCCID();
-  //Serial.println(AISnb.cgatt(1));
-  if (EEPROM.read(10) == 255 ) {
-    _writeEEPROM("147.50.151.130");
-    Serial.println("getDefault IP");
-    SerialBT.print("getDefault IP"); Serial.println(serverIP);
-  }
-
-  serverIP = read_String(10);
-  if (serverIP.length() < 10) serverIP = "147.50.151.130";
-
-  Serial.println("serverIP");
-  Serial.println(serverIP);
-  while (nbErrorTime < 10) {
-
-    meta = AISnb.getSignal();
-    Serial.print("meta.rssi:"); Serial.println(meta.rssi);
-    SerialBT.print("meta.rssi:"); SerialBT.println(meta.rssi);
-
-
-    if (!meta.rssi.equals("N/A")) {
-      if (meta.rssi.toInt() > -110) {
-        nbErrorTime++;
-        break;
-      } else {
-        errorTimeDisplay(nbErrorTime);
-        nbErrorTime++;
-        delay(1000);
-      }
-    } else {
-      errorTimeDisplay(nbErrorTime);
-      nbErrorTime++;
-      delay(1000);
-    }
-    Serial.print("nbErrorTime:"); Serial.println(nbErrorTime);
-    SerialBT.print("nbErrorTime:"); SerialBT.println(nbErrorTime);
-  }
-  SerialBT.print("WiFi:Setting");
-
-  tft.fillScreen(TFT_DARKCYAN);
-  tft.drawString("Wait for WiFi Setting (Timeout 60 Sec)", tft.width() / 2, tft.height() / 2, GFXFF);
-
-  setupWIFI();
-
-  setupOTA();
-
-  if (connectWifi == false) {
-    json = "{\"_type\":\"retrattr\",\"Tn\":\"";
-    json.concat(deviceToken);
-    json.concat("\",\"keys\":[\"epoch\",\"ip\"]}");
-    getIP(serverIP, serverPort, json);
-  }
-  //  if (connectWifi == true) {
-  //    configTime(gmtOffset_sec, 0, ntpServer);
-  //    client.setServer( "mqtt.thingcontrol.io", PORT );
-  //  }
-
-  Serial.println(json);
-  SerialBT.println(json);
-  //  previousMillis = millis();
-  hwSerial.begin(9600, SERIAL_8N1, SERIAL1_RXPIN, SERIAL1_TXPIN);
-  _initBME280();
-
-
-  _initSGP30();
-  runner.init();
-  //  Serial.println("Initialized scheduler");
-
-  runner.addTask(t1);
-  //  Serial.println("added t1");
-  runner.addTask(t2);
-  //  Serial.println("added t2");
-  runner.addTask(t3);
-  //  Serial.println("added t3");
-  runner.addTask(t4);
-  //  Serial.println("added t4");
-  runner.addTask(t6);
-  runner.addTask(t7);
-  delay(2000);
-
-  t1.enable();
-  //  Serial.println("Enabled t1");
-  t2.enable();
-  //  Serial.println("Enabled t2");
-  t3.enable();
-  //  Serial.println("Enabled t3");
-  t4.enable();
-  //  Serial.println("Enabled t2");
-  t6.enable();
-  t7.enable();
-  //  t1CallgetProbe();
-  //  t2CallshowEnv() ;
-  for (int i = 0; i < 1000; i++);
-  tft.fillScreen(TFT_BLACK);            // Clear screen
-
-  tft.fillRect(5, 185, tft.width() - 15, 5, TFT_GREEN); // Print the test text in the custom font
-  tft.fillRect(63, 185, tft.width() - 15, 5, TFT_YELLOW); // Print the test text in the custom font
-  tft.fillRect(113, 185, tft.width() - 15, 5, TFT_ORANGE); // Print the test text in the custom font
-  tft.fillRect(166, 185, tft.width() - 15, 5, TFT_RED); // Print the test text in the custom font
-  tft.fillRect(219, 185, tft.width() - 15, 5, TFT_PURPLE); // Print the test text in the custom font
-  tft.fillRect(272, 185, tft.width() - 15, 5, TFT_BURGUNDY); // Print the test text in the custom font
-}
 
 
 
@@ -763,7 +520,7 @@ void splash() {
   xpos = tft.width() / 2; // Half the screen width
   ypos = 150;
   tft.drawString("AIRMASS2.5 Inspector", xpos, ypos, GFXFF);  // Draw the text string in the selected GFX free font
-  tft.drawString("version2.9", xpos, ypos + 20, GFXFF); // Draw the text string in the selected GFX free font
+  tft.drawString("version3.1", xpos, ypos + 20, GFXFF); // Draw the text string in the selected GFX free font
   AISnb.debug = true;
   AISnb.setupDevice(serverPort);
   //
@@ -805,19 +562,207 @@ void splash() {
     tft.drawString("Waiting for NB-IoT", xpos, 100, GFXFF);
     tft.drawString(".", 1 + 2 * i, 210, GFXFF);
     delay(10);
-    Serial.println(i);
+    //    Serial.println(i);
   }
   Serial.println("end");
 }
 
+void _initLCD() {
+  tft.fillScreen(TFT_BLACK);
+  // TFT
+  splash();
+  // MLX
+  mlx.begin();
+}
+
+void _initBME280()
+{
+
+  while (!Serial) {} // Wait
+
+  delay(200);
+
+  Wire.begin(21, 22);
+
+  while (!bme.begin())
+  {
+
+    Serial.println("Could not find BME280 sensor!");
+    SerialBT.println("Could not find BME280 sensor!");
+    delay(1000);
+  }
+
+  // bme.chipID(); // Deprecated. See chipModel().
+  switch (bme.chipModel())
+  {
+    case BME280::ChipModel_BME280:
+      //      Serial.println(F("Found BME280 sensor! Success."));
+      break;
+    case BME280::ChipModel_BMP280:
+      //      Serial.println(F("Found BMP280 sensor! No Humidity available."));
+      break;
+    default:
+      Serial.println(F("Found UNKNOWN sensor! Error!"));
+
+
+  }
+
+}
+
+void errorTimeDisplay(int i) {
+  tft.fillScreen(TFT_DARKCYAN);
+  int xpos = tft.width() / 2; // Half the screen width
+  int ypos = tft.height() / 2;
+  tft.drawString("Connect NB failed " + String(i + 1) + " times", xpos, ypos, GFXFF);
+}
+void _initSGP30 () {
+  if (! sgp.begin()) {
+    Serial.println("Sensor not found :(");
+    while (1);
+  }
+  Serial.print("Found SGP30 serial #");
+  Serial.print(sgp.serialnumber[0], HEX);
+  Serial.print(sgp.serialnumber[1], HEX);
+  Serial.println(sgp.serialnumber[2], HEX);
+
+  //  calibrate();
+}
+
+
+
+
+
+void setup() {
+  Serial.begin(115200);
+  SerialBT.begin(HOSTNAME); //Bluetooth device name
+  SerialBT.println(HOSTNAME);
+  //  EEPROM.begin(512);
+  pinMode(swTFTPin, OUTPUT);
+  digitalWrite(swTFTPin, LOW);    // turn the LED off by making the voltage LOW
+  _initLCD();
+
+
+
+  deviceToken = AISnb.getNCCID();
+  //Serial.println(AISnb.cgatt(1));
+  //  if (EEPROM.read(10) == 255 ) {
+  //    _writeEEPROM("147.50.151.130");
+  //    Serial.println("getDefault IP");
+  //    SerialBT.print("getDefault IP"); Serial.println(serverIP);
+  //  }
+
+  //  serverIP = read_String(10);
+  if (serverIP.length() < 10) serverIP = "147.50.151.130";
+
+  Serial.println("serverIP");
+  Serial.println(serverIP);
+  while (nbErrorTime < 10) {
+
+    meta = AISnb.getSignal();
+    Serial.print("meta.rssi:"); Serial.println(meta.rssi);
+    SerialBT.print("meta.rssi:"); SerialBT.println(meta.rssi);
+
+
+    if (!meta.rssi.equals("N/A")) {
+      if (meta.rssi.toInt() > -110) {
+        nbErrorTime++;
+        break;
+      } else {
+        errorTimeDisplay(nbErrorTime);
+        nbErrorTime++;
+        delay(1000);
+      }
+    } else {
+      errorTimeDisplay(nbErrorTime);
+      nbErrorTime++;
+      delay(2000);
+    }
+    Serial.print("nbErrorTime:"); Serial.println(nbErrorTime);
+    SerialBT.print("nbErrorTime:"); SerialBT.println(nbErrorTime);
+  }
+  SerialBT.print("WiFi:Setting");
+
+  tft.fillScreen(TFT_DARKCYAN);
+  tft.drawString("Wait for WiFi Setting (Timeout 60 Sec)", tft.width() / 2, tft.height() / 2, GFXFF);
+
+  setupWIFI();
+
+  setupOTA();
+
+  if (connectWifi == false) {
+    json = "{\"_type\":\"retrattr\",\"Tn\":\"";
+    json.concat(deviceToken);
+    json.concat("\",\"keys\":[\"epoch\",\"ip\"]}");
+    getIP(serverIP, serverPort, json);
+  }
+  //  if (connectWifi == true) {
+  //    configTime(gmtOffset_sec, 0, ntpServer);
+  //    client.setServer( "mqtt.thingcontrol.io", PORT );
+  //  }
+
+
+  Serial.println(json);
+  SerialBT.println(json);
+  //  previousMillis = millis();
+
+  hwSerial.begin(9600, SERIAL_8N1, SERIAL1_RXPIN, SERIAL1_TXPIN);
+
+  _initBME280();
+
+
+  _initSGP30();
+
+  runner.init();
+  //  Serial.println("Initialized scheduler");
+
+  runner.addTask(t1);
+  //  Serial.println("added t1");
+  runner.addTask(t2);
+  //  Serial.println("added t2");
+  runner.addTask(t3);
+  //  Serial.println("added t3");
+  runner.addTask(t4);
+  //  Serial.println("added t4");
+  //  runner.addTask(t6);
+  runner.addTask(t7);
+  delay(2000);
+
+  t1.enable();
+  //  Serial.println("Enabled t1");
+  t2.enable();
+  //  Serial.println("Enabled t2");
+  t3.enable();
+  //  Serial.println("Enabled t3");
+  t4.enable();
+  //  Serial.println("Enabled t2");
+  //  t6.enable();
+  t7.enable();
+  //  t1CallgetProbe();
+  //  t2CallshowEnv() ;
+  for (int i = 0; i < 1000; i++);
+  tft.fillScreen(TFT_BLACK);            // Clear screen
+
+  tft.fillRect(5, 185, tft.width() - 15, 5, TFT_GREEN); // Print the test text in the custom font
+  tft.fillRect(63, 185, tft.width() - 15, 5, TFT_YELLOW); // Print the test text in the custom font
+  tft.fillRect(113, 185, tft.width() - 15, 5, TFT_ORANGE); // Print the test text in the custom font
+  tft.fillRect(166, 185, tft.width() - 15, 5, TFT_RED); // Print the test text in the custom font
+  tft.fillRect(219, 185, tft.width() - 15, 5, TFT_PURPLE); // Print the test text in the custom font
+  tft.fillRect(272, 185, tft.width() - 15, 5, TFT_BURGUNDY); // Print the test text in the custom font
+}
+
 void printBME280Data()
 {
+  Serial.println("Debug3");
   _initBME280();
   BME280::TempUnit tempUnit(BME280::TempUnit_Celsius);
   BME280::PresUnit presUnit(BME280::PresUnit_Pa);
   bme.read(pres, temp, hum, tempUnit, presUnit);
   temp = temp + TempOffset;  //compensate
-  hum = hum + HumOffset;
+
+  hum = hum + (hum * HumOffset1);
+  if (hum > 60) {
+    hum = hum + (hum * HumOffset2);
+  }
 }
 
 void composeJson() {
@@ -860,6 +805,7 @@ void composeJson() {
   json.concat(",\"voc\":");
   json.concat(sgp.TVOC);
   json.concat(",\"project\":\"CRA\"");
+  json.concat(",\"v\":\"3.1\"");
   json.concat(",\"rssi\":");
   if (connectWifi == false) {
     json.concat(meta.rssi);
@@ -875,14 +821,6 @@ void composeJson() {
 
 }
 
-/*void processTele(char jsonTele[])
-  {
-  char *aString = jsonTele;
-  Serial.println("OK");
-  Serial.print(F("+:topic v1/devices/me/ , "));
-  Serial.println(aString);
-  client.publish( "v1/devices/me/telemetry", aString);
-  }*/
 void t4CallPrintPMS7003() {
 
   // reading data was successful!
@@ -1015,38 +953,30 @@ String a0(int n) {
 
 void t7showTime() {
 
- 
+
   topNumber.createSprite(200, 40);
   //  stringPM1.fillSprite(TFT_GREEN);
   topNumber.setFreeFont(FS9);
   topNumber.setTextColor(TFT_WHITE);
   topNumber.setTextSize(1);           // Font size scaling is x1
 
-  //topNumber.drawString(">1.0um", 0, 21, GFXFF); // Print the test text in the custom font
-  //topNumber.drawNumber(data.particles_10um, 10, 0);   //tft.drawString("0.1L air", 155, 5, GFXFF);
-  //topNumber.drawString(">2.5um", 95, 21, GFXFF); // Print the test text in the custom font
-  //topNumber.drawNumber(data.particles_25um, 105, 0);   //tft.drawString("0.1L air", 155, 5, GFXFF);
-  //topNumber.drawString(">5.0um", 180, 21, GFXFF); // Print the test text in the custom font
-  //topNumber.drawNumber(data.particles_50um, 192, 0);   //tft.drawString("0.1L air", 155, 5, GFXFF);
+
   unsigned long NowTime = _epoch + ((millis() - time_s) / 1000) + (7 * 3600);
   String timeS = "";
+
   if (connectWifi == false) {
     timeS = a0(day(NowTime)) + "/" + a0(month(NowTime)) + "/" + String(year(NowTime)) + "  [" + a0(hour(NowTime)) + ":" + a0(minute(NowTime)) + "]";
+
   } else {
-    struct tm timeinfo;
     if (!getLocalTime(&timeinfo)) {
       Serial.println("Failed to obtain time");
-      ESP.restart();
+      //      ESP.restart();
       return;
     }
-     struct tm timeinfo;
-    char timeFull[23];
-    strftime(timeFull, 23, "%d/%b/%Y %H:%M:%S", &timeinfo);
-    timeS = timeFull;
-    //    timeS = a0(timeinfo.tm_mday) + "/" + a0(timeinfo.tm_mon + 1) + "/" + String(timeinfo.tm_year + 1900) + "  [" + a0(timeinfo.tm_hour) + ":" + a0(timeinfo.tm_min) + "]";
   }
+
   topNumber.drawString(timeS, 5, 10, GFXFF);
-  //Serial.println(timeS);
+
   topNumber.pushSprite(5, 5);
   topNumber.deleteSprite();
 
@@ -1134,12 +1064,10 @@ void getDataSGP30 () {
 
 
 
-  uint16_t TVOC_base, eCO2_base;
+  uint16_t TVOC_base = 0x7DD9;
+  uint16_t eCO2_base = 0x8512;
 
-  //  Serial.print("eCo2: ");   Serial.println(readCo2);
-  //  Serial.print("voc: ");  Serial.println(readTvoc);
 
-  //      sgp.setIAQBaseline(eCO2_base, TVOC_base);
   if (! sgp.getIAQBaseline(&eCO2_base, &TVOC_base)) {
     Serial.println("Failed to get baseline readings");
     return;
@@ -1152,7 +1080,8 @@ void getDataSGP30 () {
 
 }
 void t1CallGetProbe() {
-  tCallback();
+  //  tCallback();
+
   boolean pmsReady = readPMSdata(&hwSerial);
 
 
@@ -1161,7 +1090,18 @@ void t1CallGetProbe() {
     wtd = 0;
   } else {
     ready2display = false;
-    ESP.restart();
+    _countFailed--;
+    if (_countFailed >= 50000) {
+      Serial.print("t1CallGetProbe.restart():" ); Serial.println(_countFailed);
+
+      ESP.restart();
+    } else {
+
+      Serial.print("t1CallGetProbe.failed:" ); Serial.println(_countFailed);
+      hwSerial.begin(9600, SERIAL_8N1, SERIAL1_RXPIN, SERIAL1_TXPIN);
+
+      _countFailed++;
+    }
 
   }
 
@@ -1327,10 +1267,11 @@ void loop() {
   runner.execute();
   ms = millis();
 
-  if (ms % 300000 == 0)
+  if (ms % 120000 == 0)
   {
     heartBeat();
-    printLocalTime();
+    Serial.print("FreeMem:"); Serial.println(ESP.getFreeHeap());
+
   }
 
   if (ms % 600000 == 0)
@@ -1338,8 +1279,12 @@ void loop() {
 
     Serial.println("Attach WiFi for，OTA "); Serial.println(WiFi.RSSI() );
     SerialBT.println("Attach WiFi for OTA"); SerialBT.println(WiFi.RSSI() );
+    Serial.print("TempOffset: "); Serial.println(TempOffset);
+    SerialBT.print("TempOffset: "); SerialBT.println(TempOffset);
+
     setupWIFI();
     setupOTA();
+
   }
 
 }
